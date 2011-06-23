@@ -33,8 +33,8 @@ class WriteMobi {
             $this->_name = $name;
             //
             $this->_compression = 0;
-            $this->_text_length = 0x1000;
-            $this->_text_nrecords = 0x3;
+            $this->_text_length = pack('N', 4096 * 3);
+            $this->_text_nrecords = 0x03;
             $this->_records = $data->getRecords();
             $this->_stream = $fp;
         } catch (Exception $e) {
@@ -42,6 +42,17 @@ class WriteMobi {
         }
         //init
         //$this->_records = array();
+    }
+
+    private function generate_palm_doc_header() {
+        $header = '';
+        $header .= pack('n', 0x1);
+        $header .= pack('n', 0x0);
+        $header .= pack('N', $this->_text_length);
+        $header .= pack('n', $this->_text_nrecords);
+        $header .= pack('n', 4096);
+        $header .= pack('N', 0);
+        return $header;
     }
 
     private function write() {
@@ -74,7 +85,7 @@ class WriteMobi {
         // for () { 可有多项，最多(record count)
         // 4 bytes : record type
         // @TODO
-        $exth .= pack('N', 0x67); // 0x67 - distribution 
+        $exth .= pack('N', 0x64); // 0x64 - author 
         // 4 bytes : record length (length = previous(8) + len(L))
         // @TODO
         $exth .= pack('N', 0x1c); // 14 + 8 = 1c 
@@ -82,6 +93,8 @@ class WriteMobi {
         // @TODO
         // }
         $exth .= 'This is a test'; //14 bytes
+        $pad = str_repeat("\0", 4 - strlen($exth) % 4);
+        $exth .= $pad; //等宽
         return $exth;
     }
 
@@ -103,15 +116,11 @@ class WriteMobi {
 
     private function generate_record0() {
         $exth = $this->build_exth();
-        $last_content_record = count($this->_records) - 1;
+        $last_content_record = 2;//count($this->_records) - 1;
         $record0 = ''; //bin string
-        $record0 .= pack('nnNnnnn', 
-            $this->_compression, 
-            0, 
-            $this->_text_length, 
-            $this->_text_nrecords - 1, RECORD_SIZE, 0, 0);
+        $record0 .= $this->generate_palm_doc_header();
         $uid = rand(0, 0xffffffff);
-        $title = "This is a test";
+        $title = "mobi_demo";
         //0x0 - 0x3 : M O B I
         $record0 .= 'MOBI'; //append string 
         //0x4 - 0x7 : Length of header
@@ -168,7 +177,7 @@ class WriteMobi {
         $record0 .= pack('N', 0x50);
 
         //0x74 - 0x93 : Unkown
-        $record0 .= pack('NNNN', 0x00, 0x00, 0x00, 0x00);
+        $record0 .= str_repeat("\0", 32);
 
         //0x94 - 0x97 : DRM offset
         //0x98 - 0x9b : DRM count
@@ -182,7 +191,7 @@ class WriteMobi {
         //0xb0 - 0xb1 : First content record number
         //0xb2 - 0xb3 : last content record number
         //(Includes Image, DATP, HUFF, DRM)
-        $record0 .= pack('nn', 1, $last_content_record);
+        $record0 .= pack('nn', 1, 1); //@TODO
 
         // 0xb4 - 0xb7 : Unknown
         $record0 .= "\0\0\0\x01";
@@ -228,7 +237,7 @@ class WriteMobi {
         // GR: Use 7 for indexed files, 5 for unindexed
         // Setting bit 2 (0x4) disables <guide><reference type="start"> functionality
         //@TODO
-        $record0 .= pack('N', 0x1);
+        $record0 .= pack('N', 0x0);
 
         // 0xe4 - 0xe7 : Primary index record
         $record0 .= pack('N', $this->_primary_index_record ? $this->_primary_index_record : 0xffffffff);
@@ -239,8 +248,13 @@ class WriteMobi {
         $this->_records[0] = $record0 . str_repeat("\0", (1024 * 8));
     }
 
+    /**
+     * PDB header <http://en.wikipedia.org/wiki/PDB_%28Palm_OS%29>
+     */
     private function write_header() {
         $title = $this->_data->getTitle();
+        //test
+        $title = 'test'; 
         $title = preg_replace('/[^-A-Za-z0-9]/', '_', $title);
         $zero = '';
         for ($i = 0; $i < (32 - strlen($title)); $i++) {
@@ -251,19 +265,25 @@ class WriteMobi {
         $nrecords = count($this->_records);
         $this->write(
             $title, 
-            pack('nnNNNNNN', 0, 0, 0, 0, 0, 0, 0, 0),
+            pack('nnNNNNNN', 0x1, 0, $now, $now, 0, 0, 0, 0),
             'BOOK',
             'MOBI',
-            pack('NNn', 0, 0, 0)
+            pack('NNn', 0, 0, $nrecords)
         );
+        
         $offset = $this->tell() + (8 * $nrecords) + 2;
+        //PDB Record Header,
+        //offset integer 4bytes
+        //attributes byte 1byte
+        //UniqueID integer 3bytes
         foreach ((array)$this->_records as $i => $record) {
             $this->write(
                 pack('N', $offset), 
                 "\0",
-                substr(pack('N', 2 * $i), 1)
+                //substr(pack('N', 2 * $i), 1)
+                pack('Cn', 0x0, 2 * $i)
             );
-            $offset += count($record);
+            $offset += strlen($record);
         }
         $this->write("\0\0");
     }
@@ -275,8 +295,13 @@ class WriteMobi {
     }
     public function create() {
         $this->build_exth();
+        $test_txt = "<html><head><title>test</title></head><body><p>This is a test</p></body></html>";
+        $pad = str_repeat("\0", 4 - strlen($test_txt) % 4);
+        $test_txt .= $pad;
+        $this->_text_nrecords = 0x1;
+        $this->_text_length = strlen($test_txt);
         $this->generate_record0(); // record0
-        $this->_records[] = "This is a test";
+        $this->_records[] = $test_txt;
         $this->generate_end_records(); //record-last
         $this->write_header();
         $this->write_content();
@@ -284,8 +309,7 @@ class WriteMobi {
 }
 
 $data = new TextData();
-$data->records = array('this is a test');
 $fp = fopen('t.mobi', 'wb+');
-$mobi = new WriteMobi('xiangshouding', $data, $fp);
+$mobi = new WriteMobi('test', $data, $fp);
 $mobi->create();
 fclose($fp);
