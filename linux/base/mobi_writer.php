@@ -4,13 +4,13 @@
  */
 class TextData {
     public $title;
-    public $records = array();
+    public $record;
     public $author;
     public function getTitle() {
         return $this->title;
     }
-    public function getRecords() {
-        return $this->records; //a record set
+    public function getRecord() {
+        return $this->record; //a record set
     }
     public function getAuthor() {
         return $this->author;
@@ -22,20 +22,14 @@ define('RECORD_SIZE', 0x1000);
 
 class WriteMobi {
     private $_data;     //data
-    private $_name;     //file name
     private $_stream;   //out stream
     private $_records;  //record set
 
-    public function __construct($name, TextData $data, $fp) {
+    public function __construct(TextData $data, $fp) {
         try {
-            if ($data == null) throw Exception('NOT IS OBJECT(TextData)');
+            if ($data == null || !($data instanceof TextData)) throw Exception('NOT IS OBJECT(TextData)');
             $this->_data = $data;
-            $this->_name = $name;
-            //
             $this->_compression = 0;
-            $this->_text_length = pack('N', 4096 * 3);
-            $this->_text_nrecords = 0x03;
-            $this->_records = $data->getRecords();
             $this->_stream = $fp;
         } catch (Exception $e) {
             die(sprintf("Error: %s\n", $e->getMessage()));
@@ -55,11 +49,20 @@ class WriteMobi {
         return $header;
     }
 
+    private function generate_text() {
+        $record = $this->_data->getRecord();
+        $pad = str_repeat("\0", 4 - strlen($record) % 4);
+        $record .= $pad;
+        $this->_text_length = strlen($record);
+        $this->_text_nrecords = 0x1; // default 1 record
+        $this->_records[0] = ''; //record0
+        $this->_records[] = $record; 
+    }
+
     private function write() {
         $num_args = func_num_args();
         $arg_list = func_get_args();
         for ($i = 0; $i < $num_args; ++$i) {
-            //写入文件
             //$this->_stream->write($arg_list[$i]);
             fwrite($this->_stream, $arg_list[$i]);
         }
@@ -120,7 +123,7 @@ class WriteMobi {
         $record0 = ''; //bin string
         $record0 .= $this->generate_palm_doc_header();
         $uid = rand(0, 0xffffffff);
-        $title = "mobi_demo";
+        $title = $this->_data->getTitle();
         //0x0 - 0x3 : M O B I
         $record0 .= 'MOBI'; //append string 
         //0x4 - 0x7 : Length of header
@@ -253,8 +256,6 @@ class WriteMobi {
      */
     private function write_header() {
         $title = $this->_data->getTitle();
-        //test
-        $title = 'test'; 
         $title = preg_replace('/[^-A-Za-z0-9]/', '_', $title);
         $zero = '';
         for ($i = 0; $i < (32 - strlen($title)); $i++) {
@@ -295,21 +296,19 @@ class WriteMobi {
     }
     public function create() {
         $this->build_exth();
-        $test_txt = "<html><head><title>test</title></head><body><p>This is a test</p></body></html>";
-        $pad = str_repeat("\0", 4 - strlen($test_txt) % 4);
-        $test_txt .= $pad;
-        $this->_text_nrecords = 0x1;
-        $this->_text_length = strlen($test_txt);
+        $this->generate_text(); //text record
         $this->generate_record0(); // record0
-        $this->_records[] = $test_txt;
         $this->generate_end_records(); //record-last
         $this->write_header();
         $this->write_content();
     }
 }
-
-$data = new TextData();
-$fp = fopen('t.mobi', 'wb+');
-$mobi = new WriteMobi('test', $data, $fp);
-$mobi->create();
-fclose($fp);
+if (MAIN) {
+    $data = new TextData();
+    $data->record = "<html><head><title>Test</title></head><body><p>This is a test</p></body></html>";
+    $data->title = "test";
+    $fp = fopen('t.mobi', 'wb+');
+    $mobi = new WriteMobi($data, $fp);
+    $mobi->create();
+    fclose($fp);
+}
