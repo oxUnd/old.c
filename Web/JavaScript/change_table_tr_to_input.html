@@ -1,0 +1,38 @@
+<html>
+  <head>
+    <title>Table helper</title>
+    <script src="js/jquery-1.6.js"></script>
+  </head>
+  <body>
+    <table>
+      <tr>
+        <td>lots info</td>
+      </tr>
+    </table>
+    <table>
+      <tr>
+        <td>test</td>
+      </tr>
+    </table>
+    <script type="text/javascript">
+      $("table").each(function() {
+          $(this).find('tr').each(function() {
+            $(this).find('td').each(function() {
+              $(this).click(function() {
+                if ($(this).find('input').length == 0) {
+                  $(this).html('<input type="text" value="'+$(this).html()+'" />');
+                  $($(this).find('input')[0]).focus(); //focus input
+                }
+                if ($(this).find('input').length > 0) {
+                  $($(this).find('input')[0]).blur(function() {
+                    console.log($(this).val());
+                    $(this).parent().html($(this).val());
+                  });
+                }
+              });
+            });
+          });
+      });
+    </script>
+  </body>
+</html>
