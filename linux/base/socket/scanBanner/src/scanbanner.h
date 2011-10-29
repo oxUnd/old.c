@@ -1,0 +1,6 @@
+#ifndef __SCANBANNER_H_INCLUDED__
+#define __SCANBANNER_H_INCLUDED__
+
+#define CHUNK_SIZE 10
+
+#endif // __SCANBANNER_H_INCLUDED__
